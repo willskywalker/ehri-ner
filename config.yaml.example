@@ -1,0 +1,8 @@
+# Configuration for EHRI-NER Dashboard
+
+# Name of the LLM model to use (e.g., gpt-4o, gpt-4o-mini, ollama/llama2)
+llm_name: "gpt-5-nano"
+
+# API Key for the LLM provider (e.g., OpenAI API Key)
+# Leave empty if not required or if using environment variables
+api_key: ""

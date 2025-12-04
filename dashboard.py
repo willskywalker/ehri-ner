@@ -3,10 +3,12 @@ import pandas as pd
 import spacy
 from spacy import displacy
 from SPARQLWrapper import SPARQLWrapper, JSON
-from litellm import completion
+from litellm import completion, acompletion
+import asyncio
 import os
 import time
 import getpass
+import yaml
 
 SPARQL_ENDPOINT = "https://lod.ehri-project-test.eu/sparql"
 SPACY_MODEL = "en_core_web_sm"
@@ -37,8 +39,22 @@ WHERE {
 LIMIT 25
 """
 
+def load_config():
+    """Loads configuration from config.yaml if it exists."""
+    config_path = "config.yaml"
+    if os.path.exists(config_path):
+        with open(config_path, "r") as f:
+            return yaml.safe_load(f)
+    return {}
+
+config = load_config()
+
 if "OPENAI_API_KEY" not in os.environ:
-    os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")
+    # Check if API key is in config
+    if config.get("api_key"):
+        os.environ["OPENAI_API_KEY"] = config["api_key"]
+    else:
+        os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")
 
 
 @st.cache_resource
@@ -104,35 +120,49 @@ def process_records(records, _nlp_model, model_name):
 
     all_entities = []
     record_docs = {}
+    
+    # Prepare tasks for async execution
+    async def process_entity(ent, record_uri, record_title):
+        try:
+            response = await acompletion(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": base_prompt},
+                    {"role": "user", "content": ent.text}
+                ],
+                max_tokens=1000
+            )
+            formatted_date = response.choices[0].message.content.strip()
+            return {
+                "Record URI": record_uri,
+                "Entity Title": record_title,
+                "Entity Text": ent.text,
+                "Entity Type": ent.label_,
+                "Formatted Date": formatted_date
+            }
+        except Exception as e:
+            # We can log the error but maybe return None to filter it out later
+            # st.error(f"Error calling LLM: {e}") # Cannot call st.error from async easily without loop context issues sometimes, better to return error info
+            print(f"Error calling LLM for {ent.text}: {e}")
+            return None
 
+    async def run_all_tasks(tasks):
+        return await asyncio.gather(*tasks)
+
+    tasks = []
     for record in records:
         doc = nlp(record["text"])
         record_docs[record["uri"]] = doc
 
         for ent in doc.ents:
             if ent.label_ in ["DATE"]:
-                try:
-                    response = completion(
-                        model=model_name,
-                        messages=[
-                            {"role": "system", "content": base_prompt},
-                            {"role": "user", "content": ent.text}
-                        ],
-                        temperature=0,
-                        max_tokens=1000
-                    )
-                    formatted_date = response.choices[0].message.content.strip()
-                    
-                    all_entities.append({
-                        "Record URI": record["uri"],
-                        "Entity Title": record["title"],
-                        "Entity Text": ent.text,
-                        "Entity Type": ent.label_,
-                        "Formatted Date": formatted_date
-                    })
-                except Exception as e:
-                    st.error(f"Error calling LLM: {e}")
-                    return [], {}
+                tasks.append(process_entity(ent, record["uri"], record["title"]))
+    
+    if tasks:
+        # Run async tasks
+        results = asyncio.run(run_all_tasks(tasks))
+        # Filter out None results (errors)
+        all_entities = [r for r in results if r is not None]
 
     return all_entities, record_docs
 
@@ -151,7 +181,8 @@ def main():
     st.sidebar.title("Controls")
     
     # LLM Selection
-    model_name = st.sidebar.text_input("LLM Model Name", value="gpt-4o-mini", help="Enter any model name supported by LiteLLM (e.g., gpt-4o, ollama/llama2, claude-3-opus)")
+    default_model = config.get("llm_name", "gpt-5-nano")
+    model_name = st.sidebar.text_input("LLM Model Name", value=default_model, help="Enter any model name supported by LiteLLM (e.g., gpt-4o, ollama/llama2, claude-3-opus)")
     
     # SPARQL Query Input
     st.sidebar.subheader("SPARQL Query")
@@ -195,7 +226,7 @@ def main():
             
             with subtab1:
                 st.subheader("Extracted Entities")
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df, width='stretch')
                 
                 # Export button
                 csv = df.to_csv(index=False).encode('utf-8')
