@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
-import getpass
+
 import os
 import yaml
 from spacy import displacy
@@ -47,16 +47,23 @@ def load_config():
 
 config = load_config()
 
-if "OPENAI_API_KEY" not in os.environ:
-    # Check if API key is in config
-    if config.get("api_key"):
-        os.environ["OPENAI_API_KEY"] = config["api_key"]
-    else:
-        os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter API key for OpenAI: ")
-
 def main():
     st.set_page_config(page_title="EHRI Date Extractor", layout="wide")
     st.title("🗓️ EHRI Knowledge Graph Date Extractor")
+
+    # API Key Handling in Dashboard
+    if "OPENAI_API_KEY" not in os.environ:
+        if config.get("api_key"):
+            os.environ["OPENAI_API_KEY"] = config["api_key"]
+        else:
+            api_key_input = st.text_input("Enter OpenAI API Key", type="password", help="The app needs an OpenAI API key to function. Please enter it here.")
+            if api_key_input:
+                os.environ["OPENAI_API_KEY"] = api_key_input
+                st.rerun() # Rerun to pick up the key
+            else:
+                st.warning("Please enter your OpenAI API Key to proceed.")
+                st.stop()
+
     st.markdown(f"This tool queries the [EHRI SPARQL endpoint]({SPARQL_ENDPOINT}), extracts free-text descriptions, and uses SpaCy to find **DATE** entities.")
 
     # Load NLP model once
@@ -152,7 +159,7 @@ def main():
         st.session_state['should_run'] = True
 
     # --- TABS ---
-    tab_main, tab_doc = st.tabs(["🚀 Analysis", "📚 Documentation"])
+    tab_main, tab_doc = st.tabs(["Analysis", "Documentation"])
 
     with tab_main:
         if st.session_state.get('should_run', False):
@@ -256,7 +263,7 @@ def main():
 
     with tab_doc:
         st.markdown("""
-        ## 📚 Documentation
+        ## Documentation
         
         ### Query Modes
         - **Structured Builder**: Easily filter by Country and Keywords without writing SPARQL.

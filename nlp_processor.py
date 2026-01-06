@@ -77,8 +77,6 @@ def process_records(records, _nlp_model, model_name):
                 "Formatted Date": formatted_date
             }
         except Exception as e:
-            # We can log the error but maybe return None to filter it out later
-            # st.error(f"Error calling LLM: {e}") # Cannot call st.error from async easily without loop context issues sometimes, better to return error info
             print(f"Error calling LLM for {ent.text}: {e}")
             return None
 
