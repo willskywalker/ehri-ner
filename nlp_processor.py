@@ -35,7 +35,7 @@ def load_spacy_model(model_name):
         return None
 
 @st.cache_data
-def process_records(records, _nlp_model, model_name):
+def process_records(records, _nlp_model, model_name, api_key=None):
     """
     Processes a list of text records with the NLP model to find DATEs.
     """
@@ -58,7 +58,7 @@ def process_records(records, _nlp_model, model_name):
     record_docs = {}
     
     # Prepare tasks for async execution
-    async def process_entity(ent, record_uri, record_title):
+    async def process_entity(ent, record_uri, record_title, api_key):
         try:
             response = await acompletion(
                 model=model_name,
@@ -66,7 +66,8 @@ def process_records(records, _nlp_model, model_name):
                     {"role": "system", "content": base_prompt},
                     {"role": "user", "content": ent.text}
                 ],
-                max_tokens=1000
+                max_tokens=1000,
+                api_key=api_key
             )
             formatted_date = response.choices[0].message.content.strip()
             return {
@@ -90,7 +91,7 @@ def process_records(records, _nlp_model, model_name):
 
         for ent in doc.ents:
             if ent.label_ in ["DATE"]:
-                tasks.append(process_entity(ent, record["uri"], record["title"]))
+                tasks.append(process_entity(ent, record["uri"], record["title"], api_key))
     
     if tasks:
         # Run async tasks

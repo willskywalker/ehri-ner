@@ -52,17 +52,26 @@ def main():
     st.title("🗓️ EHRI Knowledge Graph Date Extractor")
 
     # API Key Handling in Dashboard
-    if "OPENAI_API_KEY" not in os.environ:
-        if config.get("api_key"):
-            os.environ["OPENAI_API_KEY"] = config["api_key"]
+    api_key = None
+    
+    # 1. Check Config first (Application-wide default)
+    if config.get("api_key"):
+        api_key = config["api_key"]
+    
+    # 2. Check Session State (User specific)
+    elif "openai_api_key" in st.session_state:
+        api_key = st.session_state["openai_api_key"]
+    
+    # 3. Prompt user if missing
+    else:
+        api_key_input = st.text_input("Enter OpenAI API Key", type="password", help="The app needs an OpenAI API key to function. Please enter it here.")
+        if api_key_input:
+            st.session_state["openai_api_key"] = api_key_input
+            api_key = api_key_input
+            st.rerun() # Rerun to pick up the key
         else:
-            api_key_input = st.text_input("Enter OpenAI API Key", type="password", help="The app needs an OpenAI API key to function. Please enter it here.")
-            if api_key_input:
-                os.environ["OPENAI_API_KEY"] = api_key_input
-                st.rerun() # Rerun to pick up the key
-            else:
-                st.warning("Please enter your OpenAI API Key to proceed.")
-                st.stop()
+            st.warning("Please enter your OpenAI API Key to proceed.")
+            st.stop()
 
     st.markdown(f"This tool queries the [EHRI SPARQL endpoint]({SPARQL_ENDPOINT}), extracts free-text descriptions, and uses SpaCy to find **DATE** entities.")
 
@@ -186,7 +195,7 @@ def main():
 
                 # 2. Process data
                 with st.spinner(f"Analyzing text with spaCy ({SPACY_MODEL}) and {model_name}..."):
-                    all_entities, processed_docs = process_records(records, SPACY_MODEL, model_name)
+                    all_entities, processed_docs = process_records(records, SPACY_MODEL, model_name, api_key=api_key)
 
                 total_time = time.time() - start_time
 
